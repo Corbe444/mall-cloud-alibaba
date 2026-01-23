@@ -131,4 +131,14 @@ public class CouponController {
         List<SmsCoupon> couponHistoryList = couponService.listByProduct(productId);
         return CommonResult.success(couponHistoryList);
     }
+
+    @ApiOperation("获取当前商品相关优惠券（带分类id，避免coupon->product调用）")
+    @RequestMapping(value = "/listByProductWithCategory", method = RequestMethod.GET)
+    @ResponseBody
+    public CommonResult<List<SmsCoupon>> listByProductWithCategory(@RequestParam Long productId,
+                                                               @RequestParam Long productCategoryId) {
+        List<SmsCoupon> couponList = couponService.listByProduct(productId, productCategoryId);
+        return CommonResult.success(couponList);
+    }
+
 }

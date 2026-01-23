@@ -1,8 +1,10 @@
 package com.mtcarpenter.mall.portal.service.impl;
 
 import com.mtcarpenter.mall.client.CouponFeign;
+import com.mtcarpenter.mall.client.OrderFeign;
 import com.mtcarpenter.mall.common.api.CommonResult;
 import com.mtcarpenter.mall.common.api.ResultCode;
+import com.mtcarpenter.mall.domain.CartPromotionItem;
 import com.mtcarpenter.mall.domain.SmsCouponHistoryDetail;
 import com.mtcarpenter.mall.model.SmsCoupon;
 import com.mtcarpenter.mall.model.SmsCouponHistory;
@@ -20,18 +22,21 @@ import java.util.List;
  */
 @Service
 public class UmsMemberCouponServiceImpl implements UmsMemberCouponService {
+
     @Autowired
     private UmsMemberService memberService;
+
     @Autowired
     private CouponFeign couponFeign;
+
+    @Autowired
+    private OrderFeign orderFeign;
 
     @Override
     public void add(Long couponId) {
         UmsMember currentMember = memberService.getCurrentMember();
-        // 远程接口 添加优惠券
         couponFeign.add(couponId, currentMember.getId(), currentMember.getNickname());
     }
-
 
     @Override
     public List<SmsCoupon> list(Integer useStatus) {
@@ -46,19 +51,20 @@ public class UmsMemberCouponServiceImpl implements UmsMemberCouponService {
     @Override
     public List<SmsCouponHistoryDetail> listCart(Integer type) {
         UmsMember currentMember = memberService.getCurrentMember();
-        CommonResult<List<SmsCouponHistoryDetail>> result = couponFeign.listCart(type, currentMember.getId());
+
+        // ✅ Prendo la lista promozioni carrello dall'order-service
+        List<CartPromotionItem> cartPromotionItemList = orderFeign.listPromotion(null).getData();
+
+        // ✅ Chiamo coupon-service con POST + RequestBody (come da refactor)
+        CommonResult<List<SmsCouponHistoryDetail>> result =
+                couponFeign.listCartPromotion(type, cartPromotionItemList, currentMember.getId());
+
         if (result.getCode() == ResultCode.SUCCESS.getCode()) {
             return result.getData();
         }
         return null;
     }
 
-    /**
-     * 获取优惠券历史列表
-     *
-     * @param useStatus
-     * @return
-     */
     @Override
     public List<SmsCouponHistory> listHistory(Integer useStatus) {
         UmsMember currentMember = memberService.getCurrentMember();
@@ -68,6 +74,4 @@ public class UmsMemberCouponServiceImpl implements UmsMemberCouponService {
         }
         return null;
     }
-
-
 }

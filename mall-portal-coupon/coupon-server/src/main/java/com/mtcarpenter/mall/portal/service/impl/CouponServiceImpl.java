@@ -1,8 +1,6 @@
 package com.mtcarpenter.mall.portal.service.impl;
 
-
 import cn.hutool.core.collection.CollUtil;
-import com.mtcarpenter.mall.client.ProductFeign;
 import com.mtcarpenter.mall.common.exception.Asserts;
 import com.mtcarpenter.mall.domain.CartPromotionItem;
 import com.mtcarpenter.mall.domain.SmsCouponHistoryDetail;
@@ -17,10 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -52,13 +47,8 @@ public class CouponServiceImpl implements CouponService {
     @Autowired
     private SmsCouponProductCategoryRelationMapper couponProductCategoryRelationMapper;
 
-    @Autowired
-    private ProductFeign productFeign;
-
-
     @Override
     public void add(Long couponId, Long memberId, String nickName) {
-        //获取优惠券信息，判断数量
         SmsCoupon coupon = couponMapper.selectByPrimaryKey(couponId);
         if (coupon == null) {
             Asserts.fail("优惠券不存在");
@@ -70,68 +60,45 @@ public class CouponServiceImpl implements CouponService {
         if (now.before(coupon.getEnableTime())) {
             Asserts.fail("优惠券还没到领取时间");
         }
-        //判断用户领取的优惠券数量是否超过限制
         SmsCouponHistoryExample couponHistoryExample = new SmsCouponHistoryExample();
         couponHistoryExample.createCriteria().andCouponIdEqualTo(couponId).andMemberIdEqualTo(memberId);
         long count = couponHistoryMapper.countByExample(couponHistoryExample);
         if (count >= coupon.getPerLimit()) {
             Asserts.fail("您已经领取过该优惠券");
         }
-        //生成领取优惠券历史
         SmsCouponHistory couponHistory = new SmsCouponHistory();
         couponHistory.setCouponId(couponId);
         couponHistory.setCouponCode(generateCouponCode(memberId));
         couponHistory.setCreateTime(now);
         couponHistory.setMemberId(memberId);
         couponHistory.setMemberNickname(nickName);
-        //主动领取
         couponHistory.setGetType(1);
-        //未使用
         couponHistory.setUseStatus(0);
         couponHistoryMapper.insert(couponHistory);
-        //修改优惠券表的数量、领取数量
+
         coupon.setCount(coupon.getCount() - 1);
         coupon.setReceiveCount(coupon.getReceiveCount() == null ? 1 : coupon.getReceiveCount() + 1);
         couponMapper.updateByPrimaryKey(coupon);
-
     }
 
-    /**
-     * 获取用户优惠券列表
-     *
-     * @param memberId
-     * @param useStatus
-     * @return
-     */
     @Override
     public List<SmsCoupon> list(Long memberId, Integer useStatus) {
         return couponHistoryDao.getCouponList(memberId, useStatus);
     }
 
-    /**
-     * 获取登录会员购物车的相关优惠券
-     *
-     * @param cartPromotionItemList
-     * @param memberId
-     * @param type
-     * @return
-     */
     @Override
     public List<SmsCouponHistoryDetail> listCart(List<CartPromotionItem> cartPromotionItemList, Long memberId, Integer type) {
         Date now = new Date();
-        //获取该用户所有优惠券
         List<SmsCouponHistoryDetail> allList = couponHistoryDao.getDetailList(memberId);
-        //根据优惠券使用类型来判断优惠券是否可用
         List<SmsCouponHistoryDetail> enableList = new ArrayList<>();
         List<SmsCouponHistoryDetail> disableList = new ArrayList<>();
+
         for (SmsCouponHistoryDetail couponHistoryDetail : allList) {
             Integer useType = couponHistoryDetail.getCoupon().getUseType();
             BigDecimal minPoint = couponHistoryDetail.getCoupon().getMinPoint();
             Date endTime = couponHistoryDetail.getCoupon().getEndTime();
+
             if (useType.equals(0)) {
-                //0->全场通用
-                //判断是否满足优惠起点
-                //计算购物车商品的总价
                 BigDecimal totalAmount = calcTotalAmount(cartPromotionItemList);
                 if (now.before(endTime) && totalAmount.subtract(minPoint).intValue() >= 0) {
                     enableList.add(couponHistoryDetail);
@@ -139,8 +106,6 @@ public class CouponServiceImpl implements CouponService {
                     disableList.add(couponHistoryDetail);
                 }
             } else if (useType.equals(1)) {
-                //1->指定分类
-                //计算指定分类商品的总价
                 List<Long> productCategoryIds = new ArrayList<>();
                 for (SmsCouponProductCategoryRelation categoryRelation : couponHistoryDetail.getCategoryRelationList()) {
                     productCategoryIds.add(categoryRelation.getProductCategoryId());
@@ -152,8 +117,6 @@ public class CouponServiceImpl implements CouponService {
                     disableList.add(couponHistoryDetail);
                 }
             } else if (useType.equals(2)) {
-                //2->指定商品
-                //计算指定商品的总价
                 List<Long> productIds = new ArrayList<>();
                 for (SmsCouponProductRelation productRelation : couponHistoryDetail.getProductRelationList()) {
                     productIds.add(productRelation.getProductId());
@@ -166,36 +129,27 @@ public class CouponServiceImpl implements CouponService {
                 }
             }
         }
+
         if (type.equals(1)) {
             return enableList.stream().map(s -> {
-                SmsCouponHistoryDetail smsCouponHistoryDetail = new SmsCouponHistoryDetail();
-                BeanUtils.copyProperties(s, smsCouponHistoryDetail);
-                return smsCouponHistoryDetail;
+                SmsCouponHistoryDetail d = new SmsCouponHistoryDetail();
+                BeanUtils.copyProperties(s, d);
+                return d;
             }).collect(Collectors.toList());
         } else {
             return disableList.stream().map(s -> {
-                SmsCouponHistoryDetail smsCouponHistoryDetail = new SmsCouponHistoryDetail();
-                BeanUtils.copyProperties(s, smsCouponHistoryDetail);
-                return smsCouponHistoryDetail;
+                SmsCouponHistoryDetail d = new SmsCouponHistoryDetail();
+                BeanUtils.copyProperties(s, d);
+                return d;
             }).collect(Collectors.toList());
         }
-
-
     }
 
-    /**
-     * 将优惠券信息更改为指定状态
-     *
-     * @param couponId
-     * @param memberId
-     * @param useStatus
-     */
     @Override
     public void updateCouponStatus(Long couponId, Long memberId, Integer useStatus) {
         if (couponId == null) {
             return;
         }
-        //查询第一张优惠券
         SmsCouponHistoryExample example = new SmsCouponHistoryExample();
         example.createCriteria().andMemberIdEqualTo(memberId)
                 .andCouponIdEqualTo(couponId).andUseStatusEqualTo(useStatus == 0 ? 1 : 0);
@@ -208,42 +162,20 @@ public class CouponServiceImpl implements CouponService {
         }
     }
 
-    /**
-     * 商品优惠券
-     *
-     * @param productId
-     * @param productCategoryId
-     * @return
-     */
     @Override
     public List<SmsCoupon> getAvailableCouponList(Long productId, Long productCategoryId) {
         return couponHistoryDao.getAvailableCouponList(productId, productCategoryId);
     }
 
-    /**
-     * 获取下一个场次
-     *
-     * @param date
-     * @return
-     */
     @Override
     public SmsFlashPromotionSession getNextFlashPromotionSession(Date date) {
         SmsFlashPromotionSessionExample sessionExample = new SmsFlashPromotionSessionExample();
-        sessionExample.createCriteria()
-                .andStartTimeGreaterThan(date);
+        sessionExample.createCriteria().andStartTimeGreaterThan(date);
         sessionExample.setOrderByClause("start_time asc");
-        List<SmsFlashPromotionSession> promotionSessionList = promotionSessionMapper.selectByExample(sessionExample);
-        if (!CollectionUtils.isEmpty(promotionSessionList)) {
-            return promotionSessionList.get(0);
-        }
-        return null;
+        List<SmsFlashPromotionSession> list = promotionSessionMapper.selectByExample(sessionExample);
+        return CollectionUtils.isEmpty(list) ? null : list.get(0);
     }
 
-    /**
-     * 获取首页广告
-     *
-     * @return
-     */
     @Override
     public List<SmsHomeAdvertise> getHomeAdvertiseList() {
         SmsHomeAdvertiseExample example = new SmsHomeAdvertiseExample();
@@ -252,12 +184,6 @@ public class CouponServiceImpl implements CouponService {
         return advertiseMapper.selectByExample(example);
     }
 
-    /**
-     * 根据时间获取秒杀活动
-     *
-     * @param date
-     * @return
-     */
     @Override
     public SmsFlashPromotion getFlashPromotion(Date date) {
         Date currDate = DateUtil.getDate(date);
@@ -266,19 +192,10 @@ public class CouponServiceImpl implements CouponService {
                 .andStatusEqualTo(1)
                 .andStartDateLessThanOrEqualTo(currDate)
                 .andEndDateGreaterThanOrEqualTo(currDate);
-        List<SmsFlashPromotion> flashPromotionList = flashPromotionMapper.selectByExample(example);
-        if (!CollectionUtils.isEmpty(flashPromotionList)) {
-            return flashPromotionList.get(0);
-        }
-        return null;
+        List<SmsFlashPromotion> list = flashPromotionMapper.selectByExample(example);
+        return CollectionUtils.isEmpty(list) ? null : list.get(0);
     }
 
-    /**
-     * 根据时间获取秒杀场次
-     *
-     * @param date
-     * @return
-     */
     @Override
     public SmsFlashPromotionSession getFlashPromotionSession(Date date) {
         Date currTime = DateUtil.getTime(date);
@@ -286,77 +203,74 @@ public class CouponServiceImpl implements CouponService {
         sessionExample.createCriteria()
                 .andStartTimeLessThanOrEqualTo(currTime)
                 .andEndTimeGreaterThanOrEqualTo(currTime);
-        List<SmsFlashPromotionSession> promotionSessionList = promotionSessionMapper.selectByExample(sessionExample);
-        if (!CollectionUtils.isEmpty(promotionSessionList)) {
-            return promotionSessionList.get(0);
-        }
-        return null;
+        List<SmsFlashPromotionSession> list = promotionSessionMapper.selectByExample(sessionExample);
+        return CollectionUtils.isEmpty(list) ? null : list.get(0);
     }
 
-    /**
-     * 获取优惠券历史列表
-     *
-     * @param memberId
-     * @param useStatus
-     * @return
-     */
     @Override
     public List<SmsCouponHistory> listHistory(Long memberId, Integer useStatus) {
-        SmsCouponHistoryExample couponHistoryExample = new SmsCouponHistoryExample();
-        SmsCouponHistoryExample.Criteria criteria = couponHistoryExample.createCriteria();
-        criteria.andMemberIdEqualTo(memberId);
+        SmsCouponHistoryExample example = new SmsCouponHistoryExample();
+        SmsCouponHistoryExample.Criteria c = example.createCriteria();
+        c.andMemberIdEqualTo(memberId);
         if (useStatus != null) {
-            criteria.andUseStatusEqualTo(useStatus);
+            c.andUseStatusEqualTo(useStatus);
         }
-        return couponHistoryMapper.selectByExample(couponHistoryExample);
+        return couponHistoryMapper.selectByExample(example);
     }
 
     /**
-     * 获取当前商品相关优惠券
-     *
-     * @param productId
-     * @return
+     * Compatibilità: SOLO coupon legati direttamente al prodotto.
+     * (prima includeva anche quelli di categoria chiamando product-service: ora non più)
      */
     @Override
     public List<SmsCoupon> listByProduct(Long productId) {
+        return listByProduct(productId, null);
+    }
+
+    /**
+     * Nuova versione: riceve anche productCategoryId dal chiamante, quindi nessun Feign verso product.
+     */
+    @Override
+    public List<SmsCoupon> listByProduct(Long productId, Long productCategoryId) {
         List<Long> allCouponIds = new ArrayList<>();
-        //获取指定商品优惠券
+
+        // coupon legati direttamente al prodotto
         SmsCouponProductRelationExample cprExample = new SmsCouponProductRelationExample();
         cprExample.createCriteria().andProductIdEqualTo(productId);
         List<SmsCouponProductRelation> cprList = couponProductRelationMapper.selectByExample(cprExample);
-        if(CollUtil.isNotEmpty(cprList)){
-            List<Long> couponIds = cprList.stream().map(SmsCouponProductRelation::getCouponId).collect(Collectors.toList());
-            allCouponIds.addAll(couponIds);
+        if (CollUtil.isNotEmpty(cprList)) {
+            allCouponIds.addAll(cprList.stream().map(SmsCouponProductRelation::getCouponId).collect(Collectors.toList()));
         }
-        //获取指定分类优惠券
-        PmsProduct product = productFeign.getPmsProductById(productId).getData();
-        SmsCouponProductCategoryRelationExample cpcrExample = new SmsCouponProductCategoryRelationExample();
-        cpcrExample.createCriteria().andProductCategoryIdEqualTo(product.getProductCategoryId());
-        List<SmsCouponProductCategoryRelation> cpcrList = couponProductCategoryRelationMapper.selectByExample(cpcrExample);
-        if(CollUtil.isNotEmpty(cpcrList)){
-            List<Long> couponIds = cpcrList.stream().map(SmsCouponProductCategoryRelation::getCouponId).collect(Collectors.toList());
-            allCouponIds.addAll(couponIds);
+
+        // coupon legati alla categoria (se il chiamante ce la passa)
+        if (productCategoryId != null) {
+            SmsCouponProductCategoryRelationExample cpcrExample = new SmsCouponProductCategoryRelationExample();
+            cpcrExample.createCriteria().andProductCategoryIdEqualTo(productCategoryId);
+            List<SmsCouponProductCategoryRelation> cpcrList = couponProductCategoryRelationMapper.selectByExample(cpcrExample);
+            if (CollUtil.isNotEmpty(cpcrList)) {
+                allCouponIds.addAll(cpcrList.stream().map(SmsCouponProductCategoryRelation::getCouponId).collect(Collectors.toList()));
+            }
         }
-        if(CollUtil.isEmpty(allCouponIds)){
+
+        if (CollUtil.isEmpty(allCouponIds)) {
             return new ArrayList<>();
         }
-        //所有优惠券
+
+        Date now = new Date();
         SmsCouponExample couponExample = new SmsCouponExample();
-        couponExample.createCriteria().andEndTimeGreaterThan(new Date())
-                .andStartTimeLessThan(new Date())
+        couponExample.createCriteria()
+                .andEndTimeGreaterThan(now)
+                .andStartTimeLessThan(now)
                 .andUseTypeEqualTo(0);
         couponExample.or(couponExample.createCriteria()
-                .andEndTimeGreaterThan(new Date())
-                .andStartTimeLessThan(new Date())
+                .andEndTimeGreaterThan(now)
+                .andStartTimeLessThan(now)
                 .andUseTypeNotEqualTo(0)
                 .andIdIn(allCouponIds));
+
         return couponMapper.selectByExample(couponExample);
     }
 
-
-    /**
-     * 16位优惠码生成：时间戳后8位+4位随机数+用户id后4位
-     */
     private String generateCouponCode(Long memberId) {
         StringBuilder sb = new StringBuilder();
         Long currentTimeMillis = System.currentTimeMillis();
@@ -373,7 +287,6 @@ public class CouponServiceImpl implements CouponService {
         }
         return sb.toString();
     }
-
 
     private BigDecimal calcTotalAmount(List<CartPromotionItem> cartItemList) {
         BigDecimal total = new BigDecimal("0");
@@ -405,5 +318,4 @@ public class CouponServiceImpl implements CouponService {
         }
         return total;
     }
-
 }
