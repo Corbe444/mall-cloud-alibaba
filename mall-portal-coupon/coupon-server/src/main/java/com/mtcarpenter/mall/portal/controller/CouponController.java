@@ -1,6 +1,5 @@
 package com.mtcarpenter.mall.portal.controller;
 
-import com.mtcarpenter.mall.client.OrderFeign;
 import com.mtcarpenter.mall.common.api.CommonResult;
 import com.mtcarpenter.mall.domain.CartPromotionItem;
 import com.mtcarpenter.mall.domain.SmsCouponHistoryDetail;
@@ -28,9 +27,6 @@ public class CouponController {
     @Autowired
     private CouponService couponService;
 
-    @Autowired
-    private OrderFeign orderFeign;
-
     @ApiOperation("领取指定优惠券")
     @RequestMapping(value = "/add/{couponId}", method = RequestMethod.POST)
     public CommonResult add(@PathVariable Long couponId,
@@ -46,7 +42,7 @@ public class CouponController {
     @RequestMapping(value = "/listHistory", method = RequestMethod.GET)
     @ResponseBody
     public CommonResult<List<SmsCouponHistory>> listHistory(@RequestParam(value = "memberId", required = false) Long memberId,
-                                                            @RequestParam(value = "useStatus", required = false) Integer useStatus) {
+                                                           @RequestParam(value = "useStatus", required = false) Integer useStatus) {
         List<SmsCouponHistory> couponHistoryList = couponService.listHistory(memberId, useStatus);
         return CommonResult.success(couponHistoryList);
     }
@@ -61,23 +57,16 @@ public class CouponController {
         return CommonResult.success(couponHistoryList);
     }
 
-    @ApiOperation("获取登录会员购物车的相关优惠券")
-    @ApiImplicitParam(name = "type", value = "使用可用:0->不可用；1->可用",
-            defaultValue = "1", allowableValues = "0,1", paramType = "query", dataType = "integer")
-    @RequestMapping(value = "/list/cart/{type}", method = RequestMethod.GET)
-    public CommonResult<List<SmsCouponHistoryDetail>> listCart(@PathVariable Integer type,
-                                                               @RequestParam(value = "memberId", required = false) Long memberId) {
-        List<CartPromotionItem> cartPromotionItemList = orderFeign.listPromotion(null).getData();
-        List<SmsCouponHistoryDetail> couponHistoryList = couponService.listCart(cartPromotionItemList, memberId, type);
-        return CommonResult.success(couponHistoryList);
-    }
-
-    @ApiOperation("获取登录会员购物车的相关优惠券")
+    /**
+     * ✅ Versione corretta per evitare dipendenza da mall-portal-order:
+     * il caller (es. mall-portal-order o frontend/bff) passa i CartPromotionItem nel body.
+     */
+    @ApiOperation("获取登录会员购物车的相关优惠券（由调用方传入购物车促销信息）")
     @ApiImplicitParam(name = "type", value = "使用可用:0->不可用；1->可用",
             defaultValue = "1", allowableValues = "0,1", paramType = "query", dataType = "integer")
     @RequestMapping(value = "/list/cart/{type}", method = RequestMethod.POST)
     public CommonResult<List<SmsCouponHistoryDetail>> listCartPromotion(@PathVariable Integer type,
-                                                                        List<CartPromotionItem> cartPromotionItemList,
+                                                                        @RequestBody List<CartPromotionItem> cartPromotionItemList,
                                                                         @RequestParam(value = "memberId", required = false) Long memberId) {
         List<SmsCouponHistoryDetail> couponHistoryList = couponService.listCart(cartPromotionItemList, memberId, type);
         return CommonResult.success(couponHistoryList);
@@ -99,14 +88,6 @@ public class CouponController {
         return CommonResult.success(null);
     }
 
-
-    /**
-     * 商品可用优惠券
-     *
-     * @param productId
-     * @param productCategoryId
-     * @return
-     */
     @ApiOperation("商品优惠券")
     @RequestMapping(value = "/getAvailableCouponList", method = RequestMethod.GET)
     public CommonResult<List<SmsCoupon>> getAvailableCouponList(@RequestParam(value = "productId") Long productId,
@@ -115,12 +96,6 @@ public class CouponController {
         return CommonResult.success(smsCouponList);
     }
 
-    /**
-     * 获取下一个场次信息
-     *
-     * @param date
-     * @return
-     */
     @ApiOperation("获取下一个场次信息")
     @RequestMapping(value = "/getNextFlashPromotionSession", method = RequestMethod.GET)
     public CommonResult<SmsFlashPromotionSession> getNextFlashPromotionSession(@RequestParam(value = "date") Date date) {
@@ -128,12 +103,6 @@ public class CouponController {
         return CommonResult.success(smsFlashPromotionSession);
     }
 
-
-    /**
-     * 获取下一个场次信息
-     *
-     * @return
-     */
     @ApiOperation("获取首页广告")
     @RequestMapping(value = "/getHomeAdvertiseList", method = RequestMethod.GET)
     public CommonResult<List<SmsHomeAdvertise>> getHomeAdvertiseList() {
@@ -141,13 +110,6 @@ public class CouponController {
         return CommonResult.success(smsHomeAdvertise);
     }
 
-
-    /**
-     * 根据时间获取秒杀活动
-     *
-     * @param date
-     * @return
-     */
     @ApiOperation("根据时间获取秒杀活动")
     @RequestMapping(value = "/getFlashPromotion", method = RequestMethod.GET)
     public CommonResult<SmsFlashPromotion> getFlashPromotion(@RequestParam(value = "date") Date date) {
@@ -155,12 +117,6 @@ public class CouponController {
         return CommonResult.success(smsFlashPromotion);
     }
 
-    /**
-     * 根据时间获取秒杀场次
-     *
-     * @param date
-     * @return
-     */
     @ApiOperation("根据时间获取秒杀场次")
     @RequestMapping(value = "/getFlashPromotionSession", method = RequestMethod.GET)
     public CommonResult<SmsFlashPromotionSession> getFlashPromotionSession(@RequestParam(value = "date") Date date) {
@@ -175,5 +131,4 @@ public class CouponController {
         List<SmsCoupon> couponHistoryList = couponService.listByProduct(productId);
         return CommonResult.success(couponHistoryList);
     }
-
 }
