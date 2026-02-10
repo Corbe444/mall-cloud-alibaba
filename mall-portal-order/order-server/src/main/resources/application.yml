@@ -40,3 +40,7 @@ rabbitmq:
     name:
       cancelOrder: cancelOrderQueue
 
+feign:
+  sentinel:
+    enabled: true
+
