@@ -9,7 +9,7 @@ spring:
     admin:
       client:
         # admin 服务端的地址
-        url: http://localhost:8095
+        url: ${GATEWAY_BASE_URL}
 
 management:
   endpoints:

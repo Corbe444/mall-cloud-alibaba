@@ -12,7 +12,8 @@ spring:
       discovery:
         server-addr: 127.0.0.1:8848
   zipkin:
-    base-url: http://localhost:9411
+    enabled: ${ZIPKIN_ENABLED:false}
+    base-url: ${ZIPKIN_BASE_URL:}
     locator:
       discovery:
         enabled: true
@@ -30,12 +31,12 @@ aliyun:
     policy:
       expire: 300 # 签名有效期(S)
     maxSize: 10 # 上传文件大小(M)
-    callback: http://39.98.190.128:8080/aliyun/oss/callback # 文件上传成功后的回调地址
+    callback: ${OSS_CALLBACK_URL:} # 文件上传成功后的回调地址
     dir:
       prefix: mall/images/ # 上传文件夹路径前缀
 
 minio:
-  endpoint: http://192.168.3.101:9090 #MinIO服务所在地址
+  endpoint: ${MINIO_ENDPOINT:} #MinIO服务所在地址
   bucketName: mall #存储桶名称
   accessKey: minioadmin #访问的key
   secretKey: minioadmin #访问的秘钥
