@@ -84,11 +84,13 @@
             <artifactId>resilience4j-circuitbreaker</artifactId>
             <version>2.2.0</version>
         </dependency>
+
         <dependency>
             <groupId>io.github.resilience4j</groupId>
             <artifactId>resilience4j-timelimiter</artifactId>
             <version>2.2.0</version>
         </dependency>
+
 
         <!-- (Opzionale) Hystrix - SOLO se vuoi replicare al 100% la detection di rpush-client -->
         <!--
