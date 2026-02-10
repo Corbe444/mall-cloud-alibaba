@@ -43,6 +43,11 @@ import java.util.concurrent.*;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import io.github.resilience4j.timelimiter.TimeLimiter;
+import io.github.resilience4j.timelimiter.TimeLimiterConfig;
+import java.time.Duration;
+
+
 /**
  * 前台订单管理Service
  * Created by macro on 2018/8/30.
@@ -185,11 +190,9 @@ public class OmsPortalOrderServiceImpl implements OmsPortalOrderService {
                     executeWithTimeout(() -> couponFeign.listCartPromotion(1, cartPromotionItemList, currentMember.getId()));
             couponHistoryDetailList = couponRes.getData();
         } catch (Exception ex) {
-            couponHistoryDetailList =
-                Optional.ofNullable((List<SmsCouponHistoryDetail>) remoteCallFallback(ex).getData())
-                .orElse(Collections.emptyList());
+            couponHistoryDetailList = portalOrderFallback(ex, Collections.emptyList());
+        }       
 
-        }
         result.setCouponHistoryDetailList(couponHistoryDetailList);
 
         // 获取用户积分
@@ -874,4 +877,10 @@ public class OmsPortalOrderServiceImpl implements OmsPortalOrderService {
         calcAmount.setPayAmount(totalAmount.subtract(promotionAmount));
         return calcAmount;
     }
+
+    private <T> T portalOrderFallback(Exception ex, T defaultValue) {
+    log.error("PortalOrder fallback triggered", ex);
+    return defaultValue;
+    }
+
 }
