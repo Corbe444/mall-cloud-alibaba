@@ -43,11 +43,6 @@ import java.util.concurrent.*;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
-import io.github.resilience4j.timelimiter.TimeLimiter;
-import io.github.resilience4j.timelimiter.TimeLimiterConfig;
-import java.time.Duration;
-
-
 /**
  * 前台订单管理Service
  * Created by macro on 2018/8/30.
@@ -124,29 +119,34 @@ public class OmsPortalOrderServiceImpl implements OmsPortalOrderService {
      * - Metodo "timeout" nel nome => MARS: Timeout methods = True
      * - Usa TimeoutException => MARS: Timeout imports = True
      */
-    private <T> T executeWithTimeout(Supplier<T> supplier) throws TimeoutException {
+   private <T> T executeWithTimeout(Supplier<T> supplier) throws TimeoutException {
+    Callable<T> timedCallable = () -> {
+        Future<T> future = resilienceExecutor.submit(supplier::get);
+        try {
+            // timeout hard-coded volutamente (antipattern detection)
+            return future.get(3, TimeUnit.SECONDS);
+        } catch (TimeoutException te) {
+            future.cancel(true);
+            throw te;
+        }
+    };
 
-    Supplier<CompletableFuture<T>> futureSupplier =
-            () -> CompletableFuture.supplyAsync(supplier, resilienceExecutor);
-
-    // ✅ versione compatibile: decorateFutureSupplier
-    Supplier<CompletableFuture<T>> timedSupplier =
-            (Supplier<CompletableFuture<T>>) TimeLimiter.decorateFutureSupplier(portalOrderTimeLimiter, futureSupplier);
-
-    Supplier<T> protectedSupplier =
-            CircuitBreaker.decorateSupplier(portalOrderCircuitBreaker, () -> timedSupplier.get().join());
+    Callable<T> protectedCallable =
+            CircuitBreaker.decorateCallable(portalOrderCircuitBreaker, timedCallable);
 
     try {
-        return protectedSupplier.get();
-    } catch (CompletionException ex) {
-        Throwable cause = ex.getCause();
-        if (cause instanceof TimeoutException) {
-            throw (TimeoutException) cause;
+        return protectedCallable.call();
+    } catch (TimeoutException te) {
+        throw te;
+    } catch (Exception ex) {
+        // unwrap minimale
+        if (ex.getCause() instanceof TimeoutException) {
+            throw (TimeoutException) ex.getCause();
         }
-        if (cause instanceof RuntimeException) {
-            throw (RuntimeException) cause;
+        if (ex instanceof RuntimeException) {
+            throw (RuntimeException) ex;
         }
-        throw ex;
+        throw new RuntimeException(ex);
     }
 }
 
@@ -174,13 +174,11 @@ public class OmsPortalOrderServiceImpl implements OmsPortalOrderService {
         try {
             CommonResult<List<UmsMemberReceiveAddress>> addressRes =
                     executeWithTimeout(() -> memberFeign.list(currentMember.getId()));
-            memberReceiveAddressList = addressRes.getData();
+            memberReceiveAddressList = Optional.ofNullable(addressRes.getData()).orElse(Collections.emptyList());
         } catch (Exception ex) {
-            memberReceiveAddressList =
-                Optional.ofNullable((List<UmsMemberReceiveAddress>) remoteCallFallback(ex).getData())
-                .orElse(Collections.emptyList());
-
+            memberReceiveAddressList = portalOrderFallback(ex, Collections.emptyList());
         }
+
         result.setMemberReceiveAddressList(memberReceiveAddressList);
 
         // ② Feign: couponFeign.listCartPromotion(...) protetta da timeout + fallback
@@ -807,26 +805,33 @@ public class OmsPortalOrderServiceImpl implements OmsPortalOrderService {
      * 获取该用户可以使用的优惠券（Feign: protetta da timeout + fallback)
      */
     private SmsCouponHistoryDetail getUseCoupon(List<CartPromotionItem> cartPromotionItemList, Long couponId) {
-        List<SmsCouponHistoryDetail> couponHistoryDetailList;
-        try {
-            CommonResult<List<SmsCouponHistoryDetail>> couponRes =
-                    executeWithTimeout(() -> couponFeign.listCartPromotion(1, cartPromotionItemList, memberUtil.getRedisUmsMember(request).getId()));
-            couponHistoryDetailList = couponRes.getData();
-        } catch (Exception ex) {
-            couponHistoryDetailList = Collections.emptyList();
-        }
+    UmsMember currentMember = memberUtil.getRedisUmsMember(request);
 
-        if (couponHistoryDetailList == null) {
-            couponHistoryDetailList = Collections.emptyList();
-        }
+    List<SmsCouponHistoryDetail> couponHistoryDetailList;
+    try {
+        CommonResult<List<SmsCouponHistoryDetail>> couponRes =
+                executeWithTimeout(() ->
+                        couponFeign.listCartPromotion(1, cartPromotionItemList, currentMember.getId())
+                );
 
-        for (SmsCouponHistoryDetail couponHistoryDetail : couponHistoryDetailList) {
-            if (couponHistoryDetail.getCoupon().getId().equals(couponId)) {
-                return couponHistoryDetail;
-            }
-        }
-        return null;
+        couponHistoryDetailList = Optional.ofNullable(couponRes)
+                .map(CommonResult::getData)
+                .orElse(Collections.emptyList());
+
+    } catch (Exception ex) {
+        couponHistoryDetailList = portalOrderFallback(ex, Collections.emptyList());
     }
+
+    for (SmsCouponHistoryDetail couponHistoryDetail : couponHistoryDetailList) {
+        if (couponHistoryDetail != null
+                && couponHistoryDetail.getCoupon() != null
+                && couponHistoryDetail.getCoupon().getId() != null
+                && couponHistoryDetail.getCoupon().getId().equals(couponId)) {
+            return couponHistoryDetail;
+        }
+    }
+    return null;
+}
 
     /**
      * 计算总金额
@@ -878,7 +883,7 @@ public class OmsPortalOrderServiceImpl implements OmsPortalOrderService {
         return calcAmount;
     }
 
-    private <T> T portalOrderFallback(Exception ex, T defaultValue) {
+    public <T> T portalOrderFallback(Exception ex, T defaultValue) {
     log.error("PortalOrder fallback triggered", ex);
     return defaultValue;
     }
