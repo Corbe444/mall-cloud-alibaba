@@ -15,7 +15,11 @@ import java.util.List;
  * @github https://github.com/mtcarpenter/mall-cloud-alibaba
  * @desc 微信公众号：山间木匠
  */
-@FeignClient(name = "mall-portal-coupon", path = "coupon")
+@FeignClient(
+    name = "mall-portal-coupon",
+    path = "coupon",
+    fallbackFactory = com.mtcarpenter.mall.client.fallback.CouponFeignFallbackFactory.class
+)
 public interface CouponFeign {
 
     @PostMapping(value = "/add/{couponId}")

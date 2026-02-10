@@ -43,4 +43,12 @@ rabbitmq:
 feign:
   sentinel:
     enabled: true
+  okhttp:
+    enabled: true
+  client:
+    config:
+      default:
+        connectTimeout: 3000
+        readTimeout: 5000
+
 

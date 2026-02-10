@@ -37,3 +37,15 @@ logging:
     com.mtcarpenter.mall.mapper: debug
     com.mtcarpenter.mall.portal.dao: debug
 
+feign:
+  sentinel:
+    enabled: true
+  okhttp:
+    enabled: true
+  client:
+    config:
+      default:
+        connectTimeout: 3000
+        readTimeout: 5000
+
+
